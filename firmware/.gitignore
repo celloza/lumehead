@@ -1,0 +1,10 @@
+# Build artifacts
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/
+.cache/
+build/
+dist/
+*.bin
+*.elf
