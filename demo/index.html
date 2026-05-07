@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>LED Matrix Simulator — 16x8</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --accent: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px;
+    gap: 20px;
+  }
+  h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  .stage {
+    background: #000;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  }
+  canvas { display: block; image-rendering: pixelated; }
+  .controls {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px 20px;
+    width: min(900px, 100%);
+  }
+  .ctrl { display: flex; flex-direction: column; gap: 6px; }
+  label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #8b949e; }
+  select, input[type="text"], input[type="color"] {
+    background: #0d1117;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  input[type="color"] { padding: 2px; height: 36px; cursor: pointer; }
+  input[type="range"] { accent-color: var(--accent); }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .toggle {
+    display: inline-flex; align-items: center; gap: 8px;
+    cursor: pointer; user-select: none; font-size: 14px;
+  }
+  .toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .hint { font-size: 11px; color: #6e7681; }
+</style>
+</head>
+<body>
+
+<h1>LED Matrix Simulator · 16×8 (2× Waveshare 8×8)</h1>
+
+<div class="stage">
+  <canvas id="led" width="640" height="320"></canvas>
+</div>
+
+<div class="controls">
+  <div class="ctrl">
+    <label for="viz">Visualization</label>
+    <select id="viz">
+      <option value="progress">Progress Bar</option>
+      <option value="marquee" selected>Marquee</option>
+      <option value="static">Static Text</option>
+      <option value="pulse">Pulsing Box</option>
+      <option value="heating">Heating Up</option>
+      <option value="printing">Printing</option>
+      <option value="leveling">Leveling</option>
+    </select>
+  </div>
+
+  <div class="ctrl">
+    <label for="text">Text (Marquee / Static)</label>
+    <input type="text" id="text" value="HELLO ESP32-S3" maxlength="64" />
+  </div>
+
+  <div class="ctrl">
+    <label for="speed">Animation Speed</label>
+    <input type="range" id="speed" min="1" max="100" value="40" />
+    <span class="hint" id="speedVal">40</span>
+  </div>
+
+  <div class="ctrl">
+    <label>Color Mode</label>
+    <div class="row">
+      <label class="toggle"><input type="checkbox" id="rainbow" /> Rainbow</label>
+      <input type="color" id="solidColor" value="#ff3344" />
+    </div>
+    <span class="hint">Toggle rainbow or pick solid HEX</span>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+ * LED MATRIX SIMULATOR
+ * Logic mirrors what will run on ESP32-S3 / FastLED so the
+ * drawing primitives translate cleanly to C++.
+ * ============================================================ */
+
+// ---- Geometry -------------------------------------------------
+const COLS = 16;          // 2 panels x 8
+const ROWS = 8;
+const PANEL_W = 8;
+const CELL = 36;          // px per LED on screen
+const PAD  = 8;           // padding inside canvas
+const GAP  = 12;          // visual gap between the two 8x8 panels
+
+const canvas = document.getElementById('led');
+const ctx = canvas.getContext('2d');
+canvas.width  = PAD * 2 + COLS * CELL + GAP;
+canvas.height = PAD * 2 + ROWS * CELL;
+
+// ---- Coordinate Mapper ---------------------------------------
+// Translates (x,y) in the 16x8 logical frame to {panel, index}
+// matching a typical row-major Waveshare 8x8 layout.
+// On hardware: panelA covers x=0..7, panelB covers x=8..15.
+function mapCoord(x, y) {
+  const panel = x < PANEL_W ? 'A' : 'B';
+  const localX = x % PANEL_W;
+  const index = y * PANEL_W + localX;   // row-major within panel
+  return { panel, index };
+}
+
+// ---- Color Overlay Engine ------------------------------------
+let rainbowMode = false;
+let solidHex = '#ff3344';
+
+function hexToRgb(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  return { r: (v >> 16) & 0xff, g: (v >> 8) & 0xff, b: v & 0xff };
+}
+
+function hsvToRgb(h, s, v) {
+  h = ((h % 360) + 360) % 360;
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  let r=0, g=0, b=0;
+  if (h < 60)      { r=c; g=x; b=0; }
+  else if (h<120)  { r=x; g=c; b=0; }
+  else if (h<180)  { r=0; g=c; b=x; }
+  else if (h<240)  { r=0; g=x; b=c; }
+  else if (h<300)  { r=x; g=0; b=c; }
+  else             { r=c; g=0; b=x; }
+  return {
+    r: Math.round((r + m) * 255),
+    g: Math.round((g + m) * 255),
+    b: Math.round((b + m) * 255)
+  };
+}
+
+// Returns {r,g,b} for an active LED.
+// brightness in [0..1] (used by pulse).
+function getColor(x, y, time, brightness = 1) {
+  let rgb;
+  if (rainbowMode) {
+    const hue = (x * 10 + time) % 360;
+    rgb = hsvToRgb(hue, 1, 1);
+  } else {
+    rgb = hexToRgb(solidHex);
+  }
+  return {
+    r: Math.round(rgb.r * brightness),
+    g: Math.round(rgb.g * brightness),
+    b: Math.round(rgb.b * brightness)
+  };
+}
+
+// ---- Frame Buffer --------------------------------------------
+// frame[y][x] = { on: bool, brightness: 0..1 }
+function makeFrame() {
+  const f = [];
+  for (let y = 0; y < ROWS; y++) {
+    const row = [];
+    for (let x = 0; x < COLS; x++) row.push({ on: false, b: 1 });
+    f.push(row);
+  }
+  return f;
+}
+
+function setPixel(frame, x, y, on = true, b = 1) {
+  if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
+  frame[y][x] = { on, b };
+}
+
+// ============================================================
+// 5x7 DOT-MATRIX FONT (column-major, LSB = top row)
+// Each char is 5 columns. Row 0 = top.
+// ============================================================
+const FONT5x7 = {
+  ' ': [0x00,0x00,0x00,0x00,0x00],
+  '!': [0x00,0x00,0x5F,0x00,0x00],
+  '"': [0x00,0x07,0x00,0x07,0x00],
+  '#': [0x14,0x7F,0x14,0x7F,0x14],
+  '$': [0x24,0x2A,0x7F,0x2A,0x12],
+  '%': [0x23,0x13,0x08,0x64,0x62],
+  '&': [0x36,0x49,0x55,0x22,0x50],
+  "'": [0x00,0x05,0x03,0x00,0x00],
+  '(': [0x00,0x1C,0x22,0x41,0x00],
+  ')': [0x00,0x41,0x22,0x1C,0x00],
+  '*': [0x14,0x08,0x3E,0x08,0x14],
+  '+': [0x08,0x08,0x3E,0x08,0x08],
+  ',': [0x00,0x50,0x30,0x00,0x00],
+  '-': [0x08,0x08,0x08,0x08,0x08],
+  '.': [0x00,0x60,0x60,0x00,0x00],
+  '/': [0x20,0x10,0x08,0x04,0x02],
+  '0': [0x3E,0x51,0x49,0x45,0x3E],
+  '1': [0x00,0x42,0x7F,0x40,0x00],
+  '2': [0x42,0x61,0x51,0x49,0x46],
+  '3': [0x21,0x41,0x45,0x4B,0x31],
+  '4': [0x18,0x14,0x12,0x7F,0x10],
+  '5': [0x27,0x45,0x45,0x45,0x39],
+  '6': [0x3C,0x4A,0x49,0x49,0x30],
+  '7': [0x01,0x71,0x09,0x05,0x03],
+  '8': [0x36,0x49,0x49,0x49,0x36],
+  '9': [0x06,0x49,0x49,0x29,0x1E],
+  ':': [0x00,0x36,0x36,0x00,0x00],
+  ';': [0x00,0x56,0x36,0x00,0x00],
+  '<': [0x00,0x08,0x14,0x22,0x41],
+  '=': [0x14,0x14,0x14,0x14,0x14],
+  '>': [0x41,0x22,0x14,0x08,0x00],
+  '?': [0x02,0x01,0x51,0x09,0x06],
+  '@': [0x32,0x49,0x79,0x41,0x3E],
+  'A': [0x7E,0x11,0x11,0x11,0x7E],
+  'B': [0x7F,0x49,0x49,0x49,0x36],
+  'C': [0x3E,0x41,0x41,0x41,0x22],
+  'D': [0x7F,0x41,0x41,0x22,0x1C],
+  'E': [0x7F,0x49,0x49,0x49,0x41],
+  'F': [0x7F,0x09,0x09,0x09,0x01],
+  'G': [0x3E,0x41,0x49,0x49,0x7A],
+  'H': [0x7F,0x08,0x08,0x08,0x7F],
+  'I': [0x00,0x41,0x7F,0x41,0x00],
+  'J': [0x20,0x40,0x41,0x3F,0x01],
+  'K': [0x7F,0x08,0x14,0x22,0x41],
+  'L': [0x7F,0x40,0x40,0x40,0x40],
+  'M': [0x7F,0x02,0x0C,0x02,0x7F],
+  'N': [0x7F,0x04,0x08,0x10,0x7F],
+  'O': [0x3E,0x41,0x41,0x41,0x3E],
+  'P': [0x7F,0x09,0x09,0x09,0x06],
+  'Q': [0x3E,0x41,0x51,0x21,0x5E],
+  'R': [0x7F,0x09,0x19,0x29,0x46],
+  'S': [0x46,0x49,0x49,0x49,0x31],
+  'T': [0x01,0x01,0x7F,0x01,0x01],
+  'U': [0x3F,0x40,0x40,0x40,0x3F],
+  'V': [0x1F,0x20,0x40,0x20,0x1F],
+  'W': [0x3F,0x40,0x38,0x40,0x3F],
+  'X': [0x63,0x14,0x08,0x14,0x63],
+  'Y': [0x07,0x08,0x70,0x08,0x07],
+  'Z': [0x61,0x51,0x49,0x45,0x43],
+  '[': [0x00,0x7F,0x41,0x41,0x00],
+  '\\':[0x02,0x04,0x08,0x10,0x20],
+  ']': [0x00,0x41,0x41,0x7F,0x00],
+  '^': [0x04,0x02,0x01,0x02,0x04],
+  '_': [0x40,0x40,0x40,0x40,0x40],
+  '°': [0x02,0x05,0x02,0x00,0x00],
+};
+
+function getGlyph(ch) {
+  const up = ch.toUpperCase();
+  return FONT5x7[up] || FONT5x7['?'];
+}
+
+// Trim leading/trailing all-zero columns so visual spacing is uniform.
+// Space stays 3 cols wide.
+function trimGlyph(g, ch) {
+  if (ch === ' ') return { cols: [0, 0, 0], width: 3 };
+  let start = 0, end = g.length - 1;
+  while (start < g.length && g[start] === 0) start++;
+  while (end >= 0 && g[end] === 0) end--;
+  if (start > end) return { cols: [0], width: 1 };
+  return { cols: g.slice(start, end + 1), width: end - start + 1 };
+}
+
+// Draw a single glyph at top-left (gx, gy) into the frame.
+// Returns the advance (glyph width) so the caller can place the next char.
+function drawGlyph(frame, ch, gx, gy) {
+  const { cols, width } = trimGlyph(getGlyph(ch), ch);
+  for (let cx = 0; cx < width; cx++) {
+    const colBits = cols[cx];
+    for (let ry = 0; ry < 7; ry++) {
+      if (colBits & (1 << ry)) {
+        setPixel(frame, gx + cx, gy + ry, true);
+      }
+    }
+  }
+  return width;
+}
+
+function glyphWidth(ch) {
+  return trimGlyph(getGlyph(ch), ch).width;
+}
+
+// ============================================================
+// VISUALIZATIONS  (each returns a freshly populated frame)
+// ============================================================
+
+// --- Progress Bar -----------------------------------------------
+// Simple left-to-right fill across the full 16x8 frame.
+// Leading edge column flashes.
+function vizProgress(time) {
+  const f = makeFrame();
+  const progress = (Math.sin(time / 1000) * 0.5 + 0.5); // 0..1 oscillating
+  const filled = Math.round(progress * COLS);
+  // hard on/off blink for the leading edge (~4 Hz)
+  const flashOn = Math.floor(time / 125) % 2 === 0;
+  for (let x = 0; x < filled; x++) {
+    const isLeading = x === filled - 1;
+    if (isLeading && !flashOn) continue;
+    for (let y = 0; y < ROWS; y++) setPixel(f, x, y, true);
+  }
+  return f;
+}
+
+// --- Marquee ----------------------------------------------------
+// Scrolls 5x7 text from right to left.
+let marqueeOffset = 0;     // float pixels
+function vizMarquee(text, dt, speed) {
+  const f = makeFrame();
+  const gap = 1;            // uniform 1-pixel space between chars
+
+  // total pixel width of the trimmed string
+  let totalW = 0;
+  const widths = [];
+  for (const ch of text) {
+    const w = glyphWidth(ch);
+    widths.push(w);
+    totalW += w + gap;
+  }
+
+  // advance offset
+  marqueeOffset += (speed / 20) * (dt / 16);
+  if (marqueeOffset > totalW + COLS) marqueeOffset = 0;
+
+  const gy = 0;
+  let cursor = COLS - Math.floor(marqueeOffset);
+  for (let i = 0; i < text.length; i++) {
+    const w = widths[i];
+    if (cursor + w >= 0 && cursor < COLS) {
+      drawGlyph(f, text[i], cursor, gy);
+    }
+    cursor += w + gap;
+  }
+  return f;
+}
+
+// --- Static Text -----------------------------------------------
+// Centers up to ~3 chars within the 16x8 frame.
+function vizStatic(text) {
+  const f = makeFrame();
+  const gap = 1;
+  const visible = text.slice(0, 3);
+  const widths = [...visible].map(glyphWidth);
+  const w = widths.reduce((a, b) => a + b, 0) + gap * (visible.length - 1);
+  const startX = Math.max(0, Math.floor((COLS - w) / 2));
+  const startY = 0;
+  let cursor = startX;
+  for (let i = 0; i < visible.length; i++) {
+    drawGlyph(f, visible[i], cursor, startY);
+    cursor += widths[i] + gap;
+  }
+  return f;
+}
+
+// --- Pulsing Box -----------------------------------------------
+function vizPulse(time, speed) {
+  const f = makeFrame();
+  const phase = (time / 1000) * (speed / 25);
+  const b = 0.15 + 0.85 * (Math.sin(phase) * 0.5 + 0.5);
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
+      setPixel(f, x, y, true, b);
+  return f;
+}
+
+// ============================================================
+// SPRITE HELPER
+// Sprites are arrays of strings, one per row.
+// '#' = on, ' ' = off, '.' = off (alias for readability),
+// '0'-'9' = on with brightness = digit/9.
+// Origin (sx, sy) is top-left in the 16x8 frame.
+// ============================================================
+function drawSprite(frame, sprite, sx, sy) {
+  for (let y = 0; y < sprite.length; y++) {
+    const row = sprite[y];
+    for (let x = 0; x < row.length; x++) {
+      const ch = row[x];
+      if (ch === ' ' || ch === '.') continue;
+      let b = 1;
+      if (ch >= '0' && ch <= '9') b = parseInt(ch, 10) / 9;
+      setPixel(frame, sx + x, sy + y, true, b);
+    }
+  }
+}
+
+// --- Heating Up -------------------------------------------------
+// A thermometer on the left panel with a rising mercury column,
+// and animated wavy "heat" lines on the right panel.
+function vizHeating(time) {
+  const f = makeFrame();
+
+  // Thermometer outline (left panel, x=1..6, y=0..7)
+  // bulb at bottom (rows 5-7), stem upward
+  const thermo = [
+    "  ###  ",
+    "  # #  ",
+    "  # #  ",
+    "  # #  ",
+    "  # #  ",
+    " ##0## ",
+    " #000# ",
+    " ##### ",
+  ];
+  drawSprite(f, thermo, 0, 0);
+
+  // mercury fill rises with a sine
+  const fillLevel = (Math.sin(time / 800) * 0.5 + 0.5); // 0..1
+  const stemTop = 1;       // highest mercury row inside stem
+  const stemBot = 5;       // just above bulb
+  const fillRows = Math.round(fillLevel * (stemBot - stemTop + 1));
+  for (let i = 0; i < fillRows; i++) {
+    const y = stemBot - i;
+    setPixel(f, 3, y, true);
+    setPixel(f, 4, y, true);
+  }
+
+  // Heat waves on right panel (x=8..15) — three rows of moving sine
+  const t = time / 200;
+  for (let waveIdx = 0; waveIdx < 3; waveIdx++) {
+    const baseY = 1 + waveIdx * 2;
+    for (let x = 8; x < COLS; x++) {
+      const phase = (x - 8) * 0.9 + t + waveIdx * 1.2;
+      const y = baseY + Math.round(Math.sin(phase));
+      setPixel(f, x, y, true);
+    }
+  }
+  return f;
+}
+
+// --- Printing ---------------------------------------------------
+// A printer head moves left/right above a "build plate" laying
+// down a layer of dots beneath it.
+function vizPrinting(time) {
+  const f = makeFrame();
+
+  // Build plate (bottom row across full width)
+  for (let x = 0; x < COLS; x++) setPixel(f, x, 7, true, 0.6);
+
+  // Print head: 3 wide, 2 tall, with a nozzle pixel underneath
+  const sweep = (Math.sin(time / 700) * 0.5 + 0.5); // 0..1
+  const headX = Math.round(sweep * (COLS - 3));
+  const headY = 0;
+  const head = [
+    "###",
+    "###",
+  ];
+  drawSprite(f, head, headX, headY);
+  // nozzle
+  setPixel(f, headX + 1, headY + 2, true);
+
+  // Filament strand from nozzle down to current layer
+  const layerY = 5;
+  for (let y = headY + 3; y < layerY; y++) {
+    setPixel(f, headX + 1, y, true, 0.5);
+  }
+
+  // Deposited layer: dots accumulate based on how many times the
+  // head has passed over each column. Use an animated dotted line.
+  for (let x = 0; x < COLS; x++) {
+    // bright dot beneath nozzle, fading toward edges of recent path
+    const dist = Math.abs(x - (headX + 1));
+    if (dist < 6) {
+      const b = Math.max(0.15, 1 - dist * 0.18);
+      setPixel(f, x, layerY, true, b);
+    }
+  }
+  return f;
+}
+
+// --- Leveling ---------------------------------------------------
+// Bubble level: a horizontal track with a bubble that drifts,
+// plus tick marks indicating center.
+function vizLeveling(time) {
+  const f = makeFrame();
+
+  // Horizontal track on rows 3 and 4 across full width
+  for (let x = 0; x < COLS; x++) {
+    setPixel(f, x, 3, true, 0.4);
+    setPixel(f, x, 4, true, 0.4);
+  }
+  // End caps
+  setPixel(f, 0, 2, true); setPixel(f, 0, 5, true);
+  setPixel(f, COLS - 1, 2, true); setPixel(f, COLS - 1, 5, true);
+
+  // Center reference ticks
+  const cx = COLS / 2;
+  setPixel(f, cx - 1, 1, true, 0.7);
+  setPixel(f, cx,     1, true, 0.7);
+  setPixel(f, cx - 1, 6, true, 0.7);
+  setPixel(f, cx,     6, true, 0.7);
+
+  // Bubble: 2 wide, drifts with a slow sine, settles near center over time
+  const drift = Math.sin(time / 900) * 5;     // -5..+5 cols off center
+  const wobble = Math.sin(time / 130) * 0.4;  // tiny jitter
+  const bx = Math.round(cx - 1 + drift + wobble);
+  // Bubble appears as "off" pixels surrounded by full track — invert by
+  // drawing it brighter than the track to read clearly on LEDs.
+  setPixel(f, bx,     3, true, 1);
+  setPixel(f, bx + 1, 3, true, 1);
+  setPixel(f, bx,     4, true, 1);
+  setPixel(f, bx + 1, 4, true, 1);
+  // bubble highlight cap
+  setPixel(f, bx,     2, true, 0.8);
+  setPixel(f, bx + 1, 2, true, 0.8);
+
+  return f;
+}
+
+// ============================================================
+// RENDERER
+// ============================================================
+function cellRect(x, y) {
+  // Add visual gap between panels A and B.
+  const panelOffset = x >= PANEL_W ? GAP : 0;
+  return {
+    cx: PAD + x * CELL + panelOffset + CELL / 2,
+    cy: PAD + y * CELL + CELL / 2
+  };
+}
+
+function renderFrame(frame, time) {
+  // background
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // subtle panel separators
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(PAD - 4, PAD - 4, 8 * CELL + 8, ROWS * CELL + 8);
+  ctx.fillRect(PAD - 4 + 8 * CELL + GAP, PAD - 4, 8 * CELL + 8, ROWS * CELL + 8);
+
+  const radius = CELL * 0.38;
+
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const px = frame[y][x];
+      const { cx, cy } = cellRect(x, y);
+
+      // off LED
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fill();
+
+      if (px.on) {
+        const c = getColor(x, y, time / 16, px.b);
+        const fill = `rgb(${c.r},${c.g},${c.b})`;
+
+        // glow
+        const grd = ctx.createRadialGradient(cx, cy, radius * 0.2, cx, cy, radius * 2.2);
+        grd.addColorStop(0, `rgba(${c.r},${c.g},${c.b},0.55)`);
+        grd.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 2.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // core
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fillStyle = fill;
+        ctx.fill();
+      }
+    }
+  }
+}
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+const ui = {
+  viz:        document.getElementById('viz'),
+  text:       document.getElementById('text'),
+  speed:      document.getElementById('speed'),
+  speedVal:   document.getElementById('speedVal'),
+  rainbow:    document.getElementById('rainbow'),
+  solidColor: document.getElementById('solidColor'),
+};
+
+ui.rainbow.addEventListener('change', e => rainbowMode = e.target.checked);
+ui.solidColor.addEventListener('input', e => solidHex = e.target.value);
+ui.speed.addEventListener('input', e => ui.speedVal.textContent = e.target.value);
+
+let last = performance.now();
+function loop(now) {
+  const dt = now - last;
+  last = now;
+  const speed = parseInt(ui.speed.value, 10);
+  const time = now;
+
+  let frame;
+  switch (ui.viz.value) {
+    case 'progress': frame = vizProgress(time * (speed / 40)); break;
+    case 'marquee':  frame = vizMarquee(ui.text.value || ' ', dt, speed); break;
+    case 'static':   frame = vizStatic(ui.text.value || ' '); break;
+    case 'pulse':    frame = vizPulse(time, speed); break;
+    case 'heating':  frame = vizHeating(time * (speed / 40)); break;
+    case 'printing': frame = vizPrinting(time * (speed / 40)); break;
+    case 'leveling': frame = vizLeveling(time * (speed / 40)); break;
+  }
+
+  renderFrame(frame, time);
+  requestAnimationFrame(loop);
+}
+
+// reset marquee when switching viz / text
+ui.viz.addEventListener('change',  () => marqueeOffset = 0);
+ui.text.addEventListener('input',  () => marqueeOffset = 0);
+
+requestAnimationFrame(loop);
+
+// expose mapper for console / future C++ port verification
+window.mapCoord = mapCoord;
+</script>
+</body>
+</html>
