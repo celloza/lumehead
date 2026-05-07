@@ -13,13 +13,45 @@ permissions:
   contents: write
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Discover (hardware, role) pairs from firmware/hardware.json so adding new
+  # boards is a one-file change with no workflow edits.
+  # ---------------------------------------------------------------------------
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.gen.outputs.include }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: gen
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          with open("firmware/hardware.json") as f:
+              cfg = json.load(f)
+          rows = []
+          for hw, meta in cfg["hardware"].items():
+              for role in meta["roles"]:
+                  rows.append({
+                      "hardware":   hw,
+                      "role":       role,
+                      "env":        f"{hw}-{role}",
+                      "chip":       meta["chip"],
+                      "flash_size": meta["flash_size"],
+                      "flash_mode": meta["flash_mode"],
+                      "flash_freq": meta["flash_freq"],
+                  })
+          print("include=" + json.dumps(rows))
+          PY
+
   build:
-    name: Build ${{ matrix.env }} firmware
+    needs: matrix
+    name: ${{ matrix.hardware }} / ${{ matrix.role }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        env: [master, slave]
+        include: ${{ fromJSON(needs.matrix.outputs.include) }}
 
     steps:
       - name: Checkout
@@ -45,34 +77,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade platformio
 
-      - name: Build (${{ matrix.env }})
+      - name: Build
         working-directory: firmware
         run: pio run -e ${{ matrix.env }}
 
-      - name: Merge factory image (${{ matrix.env }})
+      - name: Merge factory image
         working-directory: firmware
+        env:
+          ARTIFACT_PREFIX: lumehead-${{ matrix.env }}
+          BUILD_DIR: .pio/build/${{ matrix.env }}
         run: |
           set -euo pipefail
-          BUILD_DIR=".pio/build/${{ matrix.env }}"
-          OUT_DIR="dist"
-          mkdir -p "$OUT_DIR"
+          mkdir -p dist
 
-          # Pull flash params from the existing build so we match what pio used.
-          # ESP32-S3-Matrix uses 4MB QIO flash @ 80MHz.
-          python -m esptool --chip esp32s3 merge_bin \
-            -o "$OUT_DIR/lumehead-${{ matrix.env }}-factory.bin" \
-            --flash_mode dio \
-            --flash_freq 80m \
-            --flash_size 4MB \
+          python -m esptool --chip ${{ matrix.chip }} merge_bin \
+            -o "dist/${ARTIFACT_PREFIX}-factory.bin" \
+            --flash_mode ${{ matrix.flash_mode }} \
+            --flash_freq ${{ matrix.flash_freq }} \
+            --flash_size ${{ matrix.flash_size }} \
             0x0     "$BUILD_DIR/bootloader.bin" \
             0x8000  "$BUILD_DIR/partitions.bin" \
             0xe000  ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
             0x10000 "$BUILD_DIR/firmware.bin"
 
           # Also expose the raw artifacts for users who want to flash piecewise.
-          cp "$BUILD_DIR/firmware.bin"    "$OUT_DIR/lumehead-${{ matrix.env }}-app.bin"
-          cp "$BUILD_DIR/bootloader.bin"  "$OUT_DIR/lumehead-${{ matrix.env }}-bootloader.bin"
-          cp "$BUILD_DIR/partitions.bin"  "$OUT_DIR/lumehead-${{ matrix.env }}-partitions.bin"
+          cp "$BUILD_DIR/firmware.bin"   "dist/${ARTIFACT_PREFIX}-app.bin"
+          cp "$BUILD_DIR/bootloader.bin" "dist/${ARTIFACT_PREFIX}-bootloader.bin"
+          cp "$BUILD_DIR/partitions.bin" "dist/${ARTIFACT_PREFIX}-partitions.bin"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
