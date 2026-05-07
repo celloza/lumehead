@@ -1,0 +1,14 @@
+{
+  "$schema": "./hardware.schema.json",
+  "_comment": "Source of truth for supported boards. CI reads this to build a release artifact for every (hardware, role) pair. Each PlatformIO env must be named '<key>-<role>' and exist in platformio.ini.",
+  "hardware": {
+    "waveshare-esp32-s3-matrix": {
+      "display_name": "Waveshare ESP32-S3-Matrix",
+      "chip": "esp32s3",
+      "flash_size": "4MB",
+      "flash_mode": "dio",
+      "flash_freq": "80m",
+      "roles": ["master", "slave-0", "slave-1"]
+    }
+  }
+}

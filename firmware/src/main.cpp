@@ -15,10 +15,16 @@
  *     - Receives 64 * 3 = 192 bytes of raw RGB per frame and blits to its
  *       onboard 8x8 panel.
  *
- * Pin map (Waveshare ESP32-S3-Matrix; adjust if your board differs):
+ * Pin assignments and the slave I2C address are configurable via build
+ * flags in `platformio.ini` (per-hardware section). Defaults below match the
+ * Waveshare ESP32-S3-Matrix:
  *   onboard 8x8 panel data : GPIO 14  (hard-wired on the dev board)
  *   host  I2C SDA / SCL    : GPIO 8 / 9   (master only)
  *   inter-board SDA / SCL  : GPIO 4 / 5   (master Wire1 <-> slave Wire)
+ *
+ * Multiple slaves are supported by giving each one a unique
+ * `LUMEHEAD_SLAVE_ID` (0..N). The slave's I2C address becomes
+ * `LUMEHEAD_SLAVE_I2C_BASE + LUMEHEAD_SLAVE_ID` (default base 0x43).
  */
 
 #include <Arduino.h>
@@ -33,18 +39,48 @@ static constexpr uint8_t  PANEL_WIDTH  = 8;
 static constexpr uint8_t  PANEL_HEIGHT = 8;
 static constexpr uint16_t PANEL_LEDS   = PANEL_WIDTH * PANEL_HEIGHT;   // 64
 
-static constexpr int      LED_DATA_PIN = 14;   // Waveshare onboard panel
+// ---------------------------------------------------------------------------
+// Build-time configuration. All values are overridable via -D flags in
+// platformio.ini so the same source tree compiles for different hardware
+// and different slave instances.
+// ---------------------------------------------------------------------------
+#ifndef LUMEHEAD_LED_DATA_PIN
+#define LUMEHEAD_LED_DATA_PIN     14   // Waveshare onboard panel
+#endif
+#ifndef LUMEHEAD_HOST_I2C_SDA
+#define LUMEHEAD_HOST_I2C_SDA     8
+#endif
+#ifndef LUMEHEAD_HOST_I2C_SCL
+#define LUMEHEAD_HOST_I2C_SCL     9
+#endif
+#ifndef LUMEHEAD_INTER_I2C_SDA
+#define LUMEHEAD_INTER_I2C_SDA    4
+#endif
+#ifndef LUMEHEAD_INTER_I2C_SCL
+#define LUMEHEAD_INTER_I2C_SCL    5
+#endif
+#ifndef LUMEHEAD_HOST_I2C_ADDR
+#define LUMEHEAD_HOST_I2C_ADDR    0x42
+#endif
+#ifndef LUMEHEAD_SLAVE_I2C_BASE
+#define LUMEHEAD_SLAVE_I2C_BASE   0x43
+#endif
+#ifndef LUMEHEAD_SLAVE_ID
+#define LUMEHEAD_SLAVE_ID         0
+#endif
+
+static constexpr int      LED_DATA_PIN = LUMEHEAD_LED_DATA_PIN;
 static CRGB g_panel[PANEL_LEDS];
 
 // I2C addresses
-static constexpr uint8_t  I2C_ADDR_MASTER = 0x42;   // host -> master
-static constexpr uint8_t  I2C_ADDR_SLAVE  = 0x43;   // master -> slave
+static constexpr uint8_t  I2C_ADDR_MASTER = LUMEHEAD_HOST_I2C_ADDR;
+static constexpr uint8_t  I2C_ADDR_SLAVE  = LUMEHEAD_SLAVE_I2C_BASE + LUMEHEAD_SLAVE_ID;
 
 // I2C pins
-static constexpr int      HOST_I2C_SDA   = 8;
-static constexpr int      HOST_I2C_SCL   = 9;
-static constexpr int      INTER_I2C_SDA  = 4;
-static constexpr int      INTER_I2C_SCL  = 5;
+static constexpr int      HOST_I2C_SDA   = LUMEHEAD_HOST_I2C_SDA;
+static constexpr int      HOST_I2C_SCL   = LUMEHEAD_HOST_I2C_SCL;
+static constexpr int      INTER_I2C_SDA  = LUMEHEAD_INTER_I2C_SDA;
+static constexpr int      INTER_I2C_SCL  = LUMEHEAD_INTER_I2C_SCL;
 static constexpr uint32_t INTER_I2C_FREQ = 400000;
 
 // Inter-board protocol
@@ -447,8 +483,8 @@ void setup() {
     Wire.onReceive(onSlaveReceive);
     Wire.begin(static_cast<uint8_t>(I2C_ADDR_SLAVE), INTER_I2C_SDA, INTER_I2C_SCL,
                INTER_I2C_FREQ);
-    Serial.printf("Inter-board I2C slave ready @ 0x%02X (SDA=%d SCL=%d)\n",
-                  I2C_ADDR_SLAVE, INTER_I2C_SDA, INTER_I2C_SCL);
+    Serial.printf("Inter-board I2C slave id=%d ready @ 0x%02X (SDA=%d SCL=%d)\n",
+                  LUMEHEAD_SLAVE_ID, I2C_ADDR_SLAVE, INTER_I2C_SDA, INTER_I2C_SCL);
 }
 
 void loop() {
