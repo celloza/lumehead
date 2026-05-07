@@ -63,6 +63,21 @@ static inline uint16_t panelIndex(uint8_t x, uint8_t y) {
     return static_cast<uint16_t>(y) * PANEL_WIDTH + x;
 }
 
+// ---------------------------------------------------------------------------
+// "Hello world" boot animation — runs on both roles until the first I2C
+// traffic arrives. Fills the panel at ~50% brightness and slowly cycles hue.
+// ---------------------------------------------------------------------------
+static inline CRGB helloColor(uint32_t nowMs) {
+    const uint8_t hue = static_cast<uint8_t>((nowMs / 16) & 0xFF);  // ~16s sweep
+    CRGB c = CHSV(hue, 255, 128);   // V=128 -> ~50% brightness
+    return c;
+}
+
+static inline void fillPanelHello(CRGB* panel, uint32_t nowMs) {
+    const CRGB c = helloColor(nowMs);
+    for (uint16_t i = 0; i < PANEL_LEDS; i++) panel[i] = c;
+}
+
 
 // ===========================================================================
 // MASTER ROLE
@@ -102,6 +117,10 @@ static volatile uint8_t g_rxBuf[80];
 static volatile size_t  g_rxLen   = 0;
 static volatile bool    g_rxReady = false;
 
+// True until the first host I2C command lands. While true, both panels show
+// the boot "hello world" hue sweep instead of any rendered frame.
+static volatile bool    g_helloMode = true;
+
 static inline void setFramePixel(uint8_t x, uint8_t y, const CRGB& c) {
     if (x >= MATRIX_COLS || y >= MATRIX_ROWS) return;
     g_frame[static_cast<uint16_t>(y) * MATRIX_COLS + x] = c;
@@ -115,6 +134,7 @@ static void onHostReceive(int /*numBytes*/) {
     }
     g_rxLen   = n;
     g_rxReady = true;
+    g_helloMode = false;
 }
 
 static void onHostRequest() {
@@ -251,7 +271,14 @@ void loop() {
         handleHostCommand(buf, len);
     }
 
-    render(millis());
+    const uint32_t now = millis();
+    if (g_helloMode) {
+        // Fill the full 16x8 logical frame so master and slave panels agree.
+        const CRGB c = helloColor(now);
+        for (uint16_t i = 0; i < FRAME_LEDS; i++) g_frame[i] = c;
+    } else {
+        render(now);
+    }
     blitLocalPanel();
     pushSlaveFrame();
     FastLED.show();
@@ -270,6 +297,9 @@ void loop() {
 // Back buffer filled by I2C ISR; flipped to g_panel on FRAME_END.
 static volatile CRGB g_back[PANEL_LEDS];
 static volatile bool g_frameReady = false;
+
+// True until the first complete frame arrives from the master.
+static volatile bool g_helloMode = true;
 
 static void onSlaveReceive(int numBytes) {
     if (numBytes <= 0) return;
@@ -303,6 +333,7 @@ static void onSlaveReceive(int numBytes) {
 
         case CMD_FRAME_END:
             g_frameReady = true;
+            g_helloMode  = false;
             while (Wire.available()) Wire.read();
             break;
 
@@ -336,6 +367,11 @@ void loop() {
         g_frameReady = false;
         interrupts();
         FastLED.show();
+    } else if (g_helloMode) {
+        fillPanelHello(g_panel, millis());
+        FastLED.show();
+        delay(1000 / 30);
+        return;
     }
     delay(1);
 }
