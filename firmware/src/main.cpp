@@ -18,7 +18,7 @@
  * Pin map (Waveshare ESP32-S3-Matrix; adjust if your board differs):
  *   onboard 8x8 panel data : GPIO 14  (hard-wired on the dev board)
  *   host  I2C SDA / SCL    : GPIO 8 / 9   (master only)
- *   inter-board SDA / SCL  : GPIO 1 / 2   (master Wire1 <-> slave Wire)
+ *   inter-board SDA / SCL  : GPIO 4 / 5   (master Wire1 <-> slave Wire)
  */
 
 #include <Arduino.h>
@@ -43,8 +43,8 @@ static constexpr uint8_t  I2C_ADDR_SLAVE  = 0x43;   // master -> slave
 // I2C pins
 static constexpr int      HOST_I2C_SDA   = 8;
 static constexpr int      HOST_I2C_SCL   = 9;
-static constexpr int      INTER_I2C_SDA  = 1;
-static constexpr int      INTER_I2C_SCL  = 2;
+static constexpr int      INTER_I2C_SDA  = 4;
+static constexpr int      INTER_I2C_SCL  = 5;
 static constexpr uint32_t INTER_I2C_FREQ = 400000;
 
 // Inter-board protocol
