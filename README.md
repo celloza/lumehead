@@ -16,6 +16,8 @@ progress, leveling/homing, and customizable scrolling text.
 | [klipper/](klipper/) | Klipper `extras` plugin that drives the real hardware over WS2812. |
 | [klipper/led_matrix_display.py](klipper/led_matrix_display.py) | The Klipper plugin module. |
 | [klipper/README.md](klipper/README.md) | Plugin install & configuration guide. |
+| [firmware/](firmware/) | Standalone ESP32-S3 firmware (PlatformIO) for running the display without Klipper, or as a smart I2C peripheral. |
+| [docs/](docs/) | Guides — adding new hardware, authoring animations. |
 
 ## Features
 
@@ -23,13 +25,17 @@ progress, leveling/homing, and customizable scrolling text.
   per-panel indexing and optional serpentine wiring).
 - **Visualizations** — all share the same frame-buffer + sprite primitives
   between the simulator and the Klipper plugin so behaviour stays in sync:
-  - Progress bar (left-to-right fill, flashing leading edge).
-  - Marquee — 5×7 dot-matrix font with auto-trimmed glyph spacing.
-  - Static text — centred, up to 3 chars (e.g. `210`, `L42`, `72°F`).
-  - Pulsing box — full-frame sine brightness pulse.
-  - Heating up — thermometer + animated heat waves.
-  - Printing — sweeping print head depositing a glowing layer.
-  - Leveling — bubble level with drift and wobble.
+
+  | Animation | Preview |
+  | --- | --- |
+  | **Progress bar** — left-to-right fill with flashing leading edge | ![Progress](docs/images/GreenProgress.gif) |
+  | **Marquee** — 5×7 dot-matrix font with auto-trimmed glyph spacing | ![Marquee](docs/images/RainbowMarquee.gif) |
+  | **Heating** — thermometer + animated heat waves | ![Heating](docs/images/RedTemperature.gif) |
+  | **Printing** — sweeping print head depositing a glowing layer | ![Printing](docs/images/RedPrinting.gif) |
+  | **Leveling** — bubble level with drift and wobble | ![Leveling](docs/images/OrangeLevelling.gif) |
+
+  Plus **static text** (centred, up to 3 chars — e.g. `210`, `L42`, `72°F`)
+  and a full-frame **pulsing box** (sine brightness pulse).
 - **Color overlay engine** — solid HEX or spatial rainbow
   (`Hue = (x*10 + t) mod 360`).
 - **5×7 font** including digits, A–Z, common punctuation, and a degree glyph
@@ -83,13 +89,17 @@ Klipper events (printing, homing, idle).
 
 The drawing primitives in `simulator/index.html` (`setPixel`, `drawGlyph`,
 `drawSprite`, `getColor`, `mapCoord`, `FONT5x7`) intentionally mirror the
-Python equivalents in `led_matrix_display.py` 1:1. To add a new
-visualization:
+Python equivalents in `led_matrix_display.py` 1:1.
 
-1. Prototype it in the simulator.
-2. Translate the function body into Python — same names, same maths.
-3. Register it in `LedMatrixDisplay._build_frame` and add the mode name to
-   `MATRIX_SHOW`'s validation list.
+See [docs/creating-animations.md](docs/creating-animations.md) for a full
+walkthrough of authoring a new animation in the simulator and porting it to
+the Klipper plugin and ESP32-S3 firmware.
+
+## Adding new hardware
+
+The ESP32-S3 firmware is structured to support multiple board variants. See
+[docs/adding-hardware.md](docs/adding-hardware.md) for how to register a new
+board, configure pin assignments, and have CI build release binaries for it.
 
 ## License
 
