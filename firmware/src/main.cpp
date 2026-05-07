@@ -320,11 +320,12 @@ static void onSlaveReceive(int numBytes) {
                 while (Wire.available()) Wire.read();
                 return;
             }
+            CRGB* back = const_cast<CRGB*>(g_back);
             for (uint8_t x = 0; x < PANEL_WIDTH; x++) {
                 const uint8_t r = Wire.read();
                 const uint8_t g = Wire.read();
                 const uint8_t b = Wire.read();
-                g_back[panelIndex(x, y)] = CRGB(r, g, b);
+                back[panelIndex(x, y)] = CRGB(r, g, b);
             }
             // discard any extra
             while (Wire.available()) Wire.read();
