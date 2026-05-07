@@ -64,18 +64,107 @@ static inline uint16_t panelIndex(uint8_t x, uint8_t y) {
 }
 
 // ---------------------------------------------------------------------------
-// "Hello world" boot animation — runs on both roles until the first I2C
-// traffic arrives. Fills the panel at ~50% brightness and slowly cycles hue.
+// "Hello world" boot animation.
+// Master scrolls a marquee of "HELLO" across the full 16x8 frame, with a
+// slowly cycling hue so the color still drifts. Until the master has sent
+// a frame, the slave shows a local hue sweep so a loose data cable still
+// gives a visible heartbeat.
 // ---------------------------------------------------------------------------
 static inline CRGB helloColor(uint32_t nowMs) {
-    const uint8_t hue = static_cast<uint8_t>((nowMs / 16) & 0xFF);  // ~16s sweep
-    CRGB c = CHSV(hue, 255, 128);   // V=128 -> ~50% brightness
-    return c;
+    const uint8_t hue = static_cast<uint8_t>((nowMs / 32) & 0xFF);  // slower
+    return CHSV(hue, 255, 255);
 }
 
 static inline void fillPanelHello(CRGB* panel, uint32_t nowMs) {
     const CRGB c = helloColor(nowMs);
     for (uint16_t i = 0; i < PANEL_LEDS; i++) panel[i] = c;
+}
+
+// ---------------------------------------------------------------------------
+// 5x7 dot-matrix font (column-major, LSB = top row). Subset of FONT5x7 from
+// simulator/index.html — only what 'HELLO' needs plus space.
+// ---------------------------------------------------------------------------
+struct Glyph { uint8_t cols[5]; };
+
+static const Glyph FONT_SPACE = {{0x00, 0x00, 0x00, 0x00, 0x00}};
+static const Glyph FONT_H     = {{0x7F, 0x08, 0x08, 0x08, 0x7F}};
+static const Glyph FONT_E     = {{0x7F, 0x49, 0x49, 0x49, 0x41}};
+static const Glyph FONT_L     = {{0x7F, 0x40, 0x40, 0x40, 0x40}};
+static const Glyph FONT_O     = {{0x3E, 0x41, 0x41, 0x41, 0x3E}};
+
+static const Glyph* glyphFor(char c) {
+    switch (c) {
+        case 'H': case 'h': return &FONT_H;
+        case 'E': case 'e': return &FONT_E;
+        case 'L': case 'l': return &FONT_L;
+        case 'O': case 'o': return &FONT_O;
+        default:            return &FONT_SPACE;
+    }
+}
+
+// trimmed glyph width (skips leading/trailing zero columns) for even spacing
+static uint8_t glyphWidth(char c) {
+    const Glyph* g = glyphFor(c);
+    if (c == ' ') return 3;
+    int8_t start = 0, end = 4;
+    while (start <= 4 && g->cols[start] == 0) start++;
+    while (end   >= 0 && g->cols[end]   == 0) end--;
+    if (start > end) return 1;
+    return static_cast<uint8_t>(end - start + 1);
+}
+
+// Draw a glyph at logical (gx, gy). Returns advance width.
+static uint8_t drawGlyphRGB(CRGB* frame, uint8_t fw, uint8_t fh,
+                            char ch, int16_t gx, uint8_t gy, const CRGB& col) {
+    const Glyph* g = glyphFor(ch);
+    int8_t start = 0, end = 4;
+    if (ch != ' ') {
+        while (start <= 4 && g->cols[start] == 0) start++;
+        while (end   >= 0 && g->cols[end]   == 0) end--;
+        if (start > end) return 1;
+    } else {
+        return 3;
+    }
+    const uint8_t w = static_cast<uint8_t>(end - start + 1);
+    for (uint8_t cx = 0; cx < w; cx++) {
+        const uint8_t bits = g->cols[start + cx];
+        const int16_t fx = gx + cx;
+        if (fx < 0 || fx >= static_cast<int16_t>(fw)) continue;
+        for (uint8_t ry = 0; ry < 7; ry++) {
+            if (bits & (1 << ry)) {
+                const uint8_t fy = gy + ry;
+                if (fy >= fh) continue;
+                frame[static_cast<uint16_t>(fy) * fw + fx] = col;
+            }
+        }
+    }
+    return w;
+}
+
+// Render the "HELLO " marquee scrolling right-to-left into a (fw x fh) frame.
+// `scrollPx` increases over time; total cycle = textWidth + fw.
+static void renderHelloMarquee(CRGB* frame, uint8_t fw, uint8_t fh,
+                               uint32_t nowMs) {
+    // clear
+    for (uint16_t i = 0; i < static_cast<uint16_t>(fw) * fh; i++) frame[i] = CRGB::Black;
+
+    static const char text[] = "HELLO ";
+    const uint8_t  gap = 1;
+    uint8_t totalW = 0;
+    for (size_t i = 0; i < sizeof(text) - 1; i++) totalW += glyphWidth(text[i]) + gap;
+
+    const uint32_t cycle = static_cast<uint32_t>(totalW + fw);
+    const uint32_t scroll = (nowMs / 80) % cycle;     // ~12.5 cols/sec
+
+    int16_t cursor = static_cast<int16_t>(fw) - static_cast<int16_t>(scroll);
+    const CRGB col = helloColor(nowMs);
+    for (size_t i = 0; i < sizeof(text) - 1; i++) {
+        const uint8_t w = glyphWidth(text[i]);
+        if (cursor + w >= 0 && cursor < static_cast<int16_t>(fw)) {
+            drawGlyphRGB(frame, fw, fh, text[i], cursor, 0, col);
+        }
+        cursor += w + gap;
+    }
 }
 
 
@@ -273,10 +362,11 @@ void loop() {
 
     const uint32_t now = millis();
     if (g_helloMode) {
-        // Fill the full 16x8 logical frame so master and slave panels agree.
-        const CRGB c = helloColor(now);
-        for (uint16_t i = 0; i < FRAME_LEDS; i++) g_frame[i] = c;
+        // Marquee "HELLO" across the full 16x8 frame at full brightness.
+        FastLED.setBrightness(255);
+        renderHelloMarquee(g_frame, MATRIX_COLS, MATRIX_ROWS, now);
     } else {
+        FastLED.setBrightness(g_state.brightness);
         render(now);
     }
     blitLocalPanel();
