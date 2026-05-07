@@ -1,2 +1,96 @@
 # lumehead
-A LED Matrix Display for 3d Printer toolheads.
+
+A 16×8 addressable LED matrix display for 3D printer toolheads — driven by an
+ESP32-S3 (or any Klipper-supported MCU), with a browser-based simulator for
+authoring animations before flashing them to hardware.
+
+The physical display is two chained Waveshare 8×8 RGB panels (128× WS2812)
+mounted on the toolhead, showing live status: hotend temperature, print
+progress, leveling/homing, and customizable scrolling text.
+
+## Repository layout
+
+| Path | Description |
+| --- | --- |
+| [demo/index.html](demo/index.html) | Self-contained web simulator. Open in any modern browser — no build step. |
+| [demo/klipper/](demo/klipper/) | Klipper `extras` plugin that drives the real hardware over WS2812. |
+| [demo/klipper/led_matrix_display.py](demo/klipper/led_matrix_display.py) | The Klipper plugin module. |
+| [demo/klipper/README.md](demo/klipper/README.md) | Plugin install & configuration guide. |
+
+## Features
+
+- **16×8 logical frame** (two 8×8 panels with a coordinate mapper handling
+  per-panel indexing and optional serpentine wiring).
+- **Visualizations** — all share the same frame-buffer + sprite primitives
+  between the simulator and the Klipper plugin so behaviour stays in sync:
+  - Progress bar (left-to-right fill, flashing leading edge).
+  - Marquee — 5×7 dot-matrix font with auto-trimmed glyph spacing.
+  - Static text — centred, up to 3 chars (e.g. `210`, `L42`, `72°F`).
+  - Pulsing box — full-frame sine brightness pulse.
+  - Heating up — thermometer + animated heat waves.
+  - Printing — sweeping print head depositing a glowing layer.
+  - Leveling — bubble level with drift and wobble.
+- **Color overlay engine** — solid HEX or spatial rainbow
+  (`Hue = (x*10 + t) mod 360`).
+- **5×7 font** including digits, A–Z, common punctuation, and a degree glyph
+  (`°`, also accessible as a backtick alias for easy g-code typing).
+
+## Quick start — simulator
+
+```sh
+# Just open it
+start demo/index.html        # Windows
+xdg-open demo/index.html     # Linux
+open demo/index.html         # macOS
+```
+
+Use the dropdown to switch visualizations, the toggle for rainbow vs. solid
+colour, the slider for animation speed, and the text input for the marquee
+or static text.
+
+## Quick start — Klipper
+
+See [demo/klipper/README.md](demo/klipper/README.md) for the full guide.
+TL;DR:
+
+1. Copy `demo/klipper/led_matrix_display.py` into
+   `~/klipper/klippy/extras/led_matrix_display.py`.
+2. Add a `[neopixel matrix]` chain (128 LEDs) plus a
+   `[led_matrix_display]` section to your `printer.cfg`.
+3. Restart Klipper. Drive it from the console or macros:
+
+```gcode
+MATRIX_SHOW MODE=marquee TEXT="HELLO"
+MATRIX_SHOW MODE=progress VALUE=0.42
+MATRIX_SET  COLOR=#00ff88 RAINBOW=0 BRIGHTNESS=0.4 SPEED=40
+MATRIX_TEXT TEXT="72`F"          # backtick is rendered as the degree glyph
+```
+
+With `auto_mode: true`, the plugin switches modes automatically based on
+Klipper events (printing, homing, idle).
+
+## Hardware
+
+- 2× Waveshare RGB-Matrix-P3-64 (or any WS2812-based 8×8 panel) chained
+  `DOUT` → `DIN`.
+- 5 V supply sized for ~7.7 A peak (128 LEDs × 60 mA all-white). In practice
+  global brightness scaling keeps draw far below this.
+- A 3.3 V → 5 V level shifter on the data line is recommended.
+- Any Klipper MCU with a free GPIO. ESP32-S3 is a natural fit if you want to
+  run animations standalone in the future.
+
+## Porting visualizations
+
+The drawing primitives in `demo/index.html` (`setPixel`, `drawGlyph`,
+`drawSprite`, `getColor`, `mapCoord`, `FONT5x7`) intentionally mirror the
+Python equivalents in `led_matrix_display.py` 1:1. To add a new
+visualization:
+
+1. Prototype it in the simulator.
+2. Translate the function body into Python — same names, same maths.
+3. Register it in `LedMatrixDisplay._build_frame` and add the mode name to
+   `MATRIX_SHOW`'s validation list.
+
+## License
+
+See [LICENSE](LICENSE).
