@@ -1,0 +1,94 @@
+name: firmware-release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to attach artifacts to (workflow_dispatch only)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.env }} firmware
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [master, slave]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade platformio
+
+      - name: Build (${{ matrix.env }})
+        working-directory: firmware
+        run: pio run -e ${{ matrix.env }}
+
+      - name: Merge factory image (${{ matrix.env }})
+        working-directory: firmware
+        run: |
+          set -euo pipefail
+          BUILD_DIR=".pio/build/${{ matrix.env }}"
+          OUT_DIR="dist"
+          mkdir -p "$OUT_DIR"
+
+          # Pull flash params from the existing build so we match what pio used.
+          # ESP32-S3-Matrix uses 4MB QIO flash @ 80MHz.
+          python -m esptool --chip esp32s3 merge_bin \
+            -o "$OUT_DIR/lumehead-${{ matrix.env }}-factory.bin" \
+            --flash_mode dio \
+            --flash_freq 80m \
+            --flash_size 4MB \
+            0x0     "$BUILD_DIR/bootloader.bin" \
+            0x8000  "$BUILD_DIR/partitions.bin" \
+            0xe000  ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
+            0x10000 "$BUILD_DIR/firmware.bin"
+
+          # Also expose the raw artifacts for users who want to flash piecewise.
+          cp "$BUILD_DIR/firmware.bin"    "$OUT_DIR/lumehead-${{ matrix.env }}-app.bin"
+          cp "$BUILD_DIR/bootloader.bin"  "$OUT_DIR/lumehead-${{ matrix.env }}-bootloader.bin"
+          cp "$BUILD_DIR/partitions.bin"  "$OUT_DIR/lumehead-${{ matrix.env }}-partitions.bin"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumehead-${{ matrix.env }}
+          path: firmware/dist/*
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: firmware/dist/*
+
+      - name: Attach to release (manual dispatch)
+        if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: firmware/dist/*
