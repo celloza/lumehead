@@ -1,5 +1,9 @@
 # lumehead
 
+[![release](https://github.com/celloza/lumehead/actions/workflows/firmware-release.yml/badge.svg)](https://github.com/celloza/lumehead/actions/workflows/firmware-release.yml)
+
+<a href="https://www.buymeacoffee.com/celloza" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
 A 16×8 addressable LED matrix display for 3D printer toolheads — driven by an
 ESP32-S3 (or any Klipper-supported MCU), with a browser-based simulator for
 authoring animations before flashing them to hardware.
