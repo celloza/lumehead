@@ -12,10 +12,10 @@ progress, leveling/homing, and customizable scrolling text.
 
 | Path | Description |
 | --- | --- |
-| [demo/index.html](demo/index.html) | Self-contained web simulator. Open in any modern browser — no build step. |
-| [demo/klipper/](demo/klipper/) | Klipper `extras` plugin that drives the real hardware over WS2812. |
-| [demo/klipper/led_matrix_display.py](demo/klipper/led_matrix_display.py) | The Klipper plugin module. |
-| [demo/klipper/README.md](demo/klipper/README.md) | Plugin install & configuration guide. |
+| [simulator/index.html](simulator/index.html) | Self-contained web simulator. Open in any modern browser — no build step. |
+| [klipper/](klipper/) | Klipper `extras` plugin that drives the real hardware over WS2812. |
+| [klipper/led_matrix_display.py](klipper/led_matrix_display.py) | The Klipper plugin module. |
+| [klipper/README.md](klipper/README.md) | Plugin install & configuration guide. |
 
 ## Features
 
@@ -39,9 +39,9 @@ progress, leveling/homing, and customizable scrolling text.
 
 ```sh
 # Just open it
-start demo/index.html        # Windows
-xdg-open demo/index.html     # Linux
-open demo/index.html         # macOS
+start simulator/index.html        # Windows
+xdg-open simulator/index.html     # Linux
+open simulator/index.html         # macOS
 ```
 
 Use the dropdown to switch visualizations, the toggle for rainbow vs. solid
@@ -50,10 +50,10 @@ or static text.
 
 ## Quick start — Klipper
 
-See [demo/klipper/README.md](demo/klipper/README.md) for the full guide.
+See [klipper/README.md](klipper/README.md) for the full guide.
 TL;DR:
 
-1. Copy `demo/klipper/led_matrix_display.py` into
+1. Copy `klipper/led_matrix_display.py` into
    `~/klipper/klippy/extras/led_matrix_display.py`.
 2. Add a `[neopixel matrix]` chain (128 LEDs) plus a
    `[led_matrix_display]` section to your `printer.cfg`.
@@ -81,7 +81,7 @@ Klipper events (printing, homing, idle).
 
 ## Porting visualizations
 
-The drawing primitives in `demo/index.html` (`setPixel`, `drawGlyph`,
+The drawing primitives in `simulator/index.html` (`setPixel`, `drawGlyph`,
 `drawSprite`, `getColor`, `mapCoord`, `FONT5x7`) intentionally mirror the
 Python equivalents in `led_matrix_display.py` 1:1. To add a new
 visualization:
