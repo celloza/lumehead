@@ -100,11 +100,6 @@ jobs:
             0xe000  ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
             0x10000 "$BUILD_DIR/firmware.bin"
 
-          # Also expose the raw artifacts for users who want to flash piecewise.
-          cp "$BUILD_DIR/firmware.bin"   "dist/${ARTIFACT_PREFIX}-app.bin"
-          cp "$BUILD_DIR/bootloader.bin" "dist/${ARTIFACT_PREFIX}-bootloader.bin"
-          cp "$BUILD_DIR/partitions.bin" "dist/${ARTIFACT_PREFIX}-partitions.bin"
-
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
