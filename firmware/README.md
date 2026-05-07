@@ -21,13 +21,13 @@ the `firmware/` folder directly in VS Code.
   Klipper / Pi  ---SDA--->|  MASTER  GPIO 8 |   host I2C @ 0x42
                 ---SCL--->|          GPIO 9 |
                           |                  |
-                          |  Wire1 GPIO 1 ------SDA----+
-                          |  Wire1 GPIO 2 ------SCL----+   inter-board I2C
+                          |  Wire1 GPIO 4 ------SDA----+
+                          |  Wire1 GPIO 5 ------SCL----+   inter-board I2C
                           +------------------+         |   @ 400 kHz
                                                        v
                           +------------------+
-                          |  SLAVE   GPIO 1 |<---SDA----
-                          |          GPIO 2 |<---SCL----
+                          |  SLAVE   GPIO 4 |<---SDA----
+                          |          GPIO 5 |<---SCL----
                           +------------------+
                               I2C @ 0x43
 ```
