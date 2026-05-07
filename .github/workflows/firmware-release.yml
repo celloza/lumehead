@@ -1,4 +1,4 @@
-name: firmware-release
+name: release
 
 on:
   release:
@@ -123,3 +123,61 @@ jobs:
         with:
           tag_name: ${{ inputs.tag }}
           files: firmware/dist/*
+
+  # ---------------------------------------------------------------------------
+  # Package the Klipper plugin as a versioned tarball + zip and attach to
+  # the release. The plugin is a single Python module + README; users drop
+  # `led_matrix_display.py` into `~/klipper/klippy/extras/`.
+  # ---------------------------------------------------------------------------
+  klipper-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.tag || 'dev' }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stage and archive plugin
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          STAGE="lumehead-klipper-${TAG}"
+          mkdir -p "dist/${STAGE}"
+          cp klipper/led_matrix_display.py "dist/${STAGE}/"
+          cp klipper/README.md             "dist/${STAGE}/"
+          cp LICENSE                       "dist/${STAGE}/" || true
+          (cd dist && tar -czf "${STAGE}.tar.gz" "${STAGE}")
+          (cd dist && zip -qr "${STAGE}.zip"     "${STAGE}")
+          ls -l dist
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumehead-klipper
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+
+      - name: Attach to release (manual dispatch)
+        if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
