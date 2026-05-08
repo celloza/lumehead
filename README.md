@@ -4,6 +4,10 @@
 
 <a href="https://www.buymeacoffee.com/celloza" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
+<video src="https://github.com/celloza/lumehead/raw/main/docs/media/lumehead-demo.mp4" controls muted playsinline width="640"></video>
+
+[▶︎ Watch the demo](docs/media/lumehead-demo.mp4)
+
 A 16×8 addressable LED matrix display for 3D printer toolheads — driven by an
 ESP32-S3 (or any Klipper-supported MCU), with a browser-based simulator for
 authoring animations before flashing them to hardware.
@@ -32,11 +36,11 @@ progress, leveling/homing, and customizable scrolling text.
 
   | Animation | Preview |
   | --- | --- |
-  | **Progress bar** — left-to-right fill with flashing leading edge | ![Progress](docs/images/GreenProgress.gif) |
-  | **Marquee** — 5×7 dot-matrix font with auto-trimmed glyph spacing | ![Marquee](docs/images/RainbowMarquee.gif) |
-  | **Heating** — thermometer + animated heat waves | ![Heating](docs/images/RedTemperature.gif) |
-  | **Printing** — sweeping print head depositing a glowing layer | ![Printing](docs/images/RedPrinting.gif) |
-  | **Leveling** — bubble level with drift and wobble | ![Leveling](docs/images/OrangeLevelling.gif) |
+  | **Progress bar** — left-to-right fill with flashing leading edge | ![Progress](docs/media/GreenProgress.gif) |
+  | **Marquee** — 5×7 dot-matrix font with auto-trimmed glyph spacing | ![Marquee](docs/media/RainbowMarquee.gif) |
+  | **Heating** — thermometer + animated heat waves | ![Heating](docs/media/RedTemperature.gif) |
+  | **Printing** — sweeping print head depositing a glowing layer | ![Printing](docs/media/RedPrinting.gif) |
+  | **Leveling** — bubble level with drift and wobble | ![Leveling](docs/media/OrangeLevelling.gif) |
 
   Plus **static text** (centred, up to 3 chars — e.g. `210`, `L42`, `72°F`)
   and a full-frame **pulsing box** (sine brightness pulse).

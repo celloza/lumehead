@@ -92,7 +92,7 @@ Open [`firmware/src/main.cpp`](../firmware/src/main.cpp).
 ## Step 4 — record a preview
 
 Capture a short looped GIF of the animation running in the simulator and
-save it as `docs/images/<DescriptiveName>.gif`. Add a row to the
+save it as `docs/media/<DescriptiveName>.gif`. Add a row to the
 **Visualizations** table in the top-level [README](../README.md) so it
 shows up alongside the others.
 
@@ -111,5 +111,5 @@ shows up alongside the others.
 - [ ] Works in the simulator.
 - [ ] Ported to the Klipper plugin and listed in `_MODES`.
 - [ ] (Optional) Ported to the firmware and given a `MODE_*` byte.
-- [ ] GIF preview committed under `docs/images/`.
+- [ ] GIF preview committed under `docs/media/`.
 - [ ] Row added to the **Visualizations** table in the top-level README.
