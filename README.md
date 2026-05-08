@@ -6,7 +6,7 @@
 
 <video src="https://github.com/celloza/lumehead/raw/main/docs/media/lumehead-demo.mp4" controls muted playsinline width="640"></video>
 
-[▶︎ Watch the demo](docs/media/lumehead-demo.mp4)
+https://github.com/user-attachments/assets/4eb1164f-e298-448e-bd1d-ad6ae994c9b8
 
 A 16×8 addressable LED matrix display for 3D printer toolheads — driven by an
 ESP32-S3 (or any Klipper-supported MCU), with a browser-based simulator for
