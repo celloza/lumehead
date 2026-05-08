@@ -37,8 +37,8 @@ progress, leveling/homing, and customizable scrolling text.
   | **Progress bar** — left-to-right fill with flashing leading edge | ![Progress](docs/media/GreenProgress.gif) |
   | **Marquee** — 5×7 dot-matrix font with auto-trimmed glyph spacing | ![Marquee](docs/media/RainbowMarquee.gif) |
   | **Heating** — thermometer + animated heat waves | ![Heating](docs/media/RedTemperature.gif) |
-  | **Printing** — sweeping print head depositing a glowing layer | ![Printing](docs/media/RedPrinting.gif) |
-  | **Leveling** — bubble level with drift and wobble | ![Leveling](docs/media/OrangeLevelling.gif) |
+  | **Printing** — sweeping print head | ![Printing](docs/media/RedPrinting.gif) |
+  | **Leveling** — used when running auto-bed levelling | ![Leveling](docs/media/OrangeLevelling.gif) |
 
   Plus **static text** (centred, up to 3 chars — e.g. `210`, `L42`, `72°F`)
   and a full-frame **pulsing box** (sine brightness pulse).
