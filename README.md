@@ -4,9 +4,7 @@
 
 <a href="https://www.buymeacoffee.com/celloza" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-<video src="https://github.com/celloza/lumehead/raw/main/docs/media/lumehead-demo.mp4" controls muted playsinline width="640"></video>
-
-https://github.com/user-attachments/assets/4eb1164f-e298-448e-bd1d-ad6ae994c9b8
+https://github.com/user-attachments/assets/20419a4e-de41-460f-8eeb-57437fe6973f
 
 A 16×8 addressable LED matrix display for 3D printer toolheads — driven by an
 ESP32-S3 (or any Klipper-supported MCU), with a browser-based simulator for
