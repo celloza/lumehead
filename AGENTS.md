@@ -27,10 +27,42 @@ across all three layers.
 
 Repo size: small (~25 source files, single-digit MB excluding `docs/media`
 and `firmware/.pio`). Single contributor. Git default branch: `main`.
-Conventional Commits required (`feat`, `fix`, `docs`, `ci`, `refactor`,
-`chore`, …) with optional scope (`firmware`, `klipper`, `simulator`, `ci`).
-Commits are GPG-signed by the user — **never override `user.name` /
-`user.email`, never pass `--no-verify`**.
+
+## Git workflow & commits
+
+- **Conventional Commits are mandatory.** Format: `<type>(<scope>): <subject>`.
+  - Types in use: `feat`, `fix`, `docs`, `ci`, `refactor`, `chore`,
+    `test`, `style`, `perf`.
+  - Optional scopes seen in history: `firmware`, `klipper`, `simulator`,
+    `ci`. Pick one if the change is layer-specific; omit it for repo-wide
+    changes.
+  - Subject: imperative mood, lower-case, no trailing period. Soft cap
+    72 chars.
+  - Examples taken from the log:
+    - `feat(firmware): replace boot fill with scrolling 'HELLO' marquee`
+    - `fix(firmware): use GPIO 4/5 for inter-board I2C wiring`
+    - `docs(firmware): update wiring diagram for GPIO 4/5 inter-board I2C`
+    - `ci: only ship factory.bin in releases (drop piecewise artifacts)`
+- **Split unrelated changes into separate commits.** When in doubt,
+  one commit per Conventional Commit `type`.
+- **Commits are GPG-signed by the user's local identity.** Use plain
+  `git commit -m "..."`. **Never** override `user.name` / `user.email`
+  on the command line, never pass `--no-verify`. The user's
+  `commit.gpgsign=true` and signing key are already configured globally;
+  overriding identity bypasses signing.
+- **Push directly to `main`.** This is a single-contributor repo; there
+  is no PR review gate. Run `git push` after each logical commit so the
+  CI badge stays current.
+- If you ever need to rewrite history (e.g. after `git filter-branch`
+  which strips signatures), re-sign with:
+  ```powershell
+  git rebase --root --exec "git commit --amend --no-edit -S --no-verify"
+  git push --force-with-lease
+  ```
+  Note: `--no-verify` is acceptable here because amend-during-rebase
+  triggers no commit hooks worth bypassing; this is the one exception.
+- For destructive ops (`push --force`, `reset --hard` on a published
+  branch, deleting tags or releases) confirm with the user first.
 
 ## Environment
 
