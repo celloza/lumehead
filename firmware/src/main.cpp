@@ -327,8 +327,9 @@ static void render(uint32_t nowMs) {
 // Sent row-by-row (24-byte payload each) to stay well under typical I2C
 // driver buffer sizes.
 static void pushSlaveFrame() {
+    uint8_t beginBuf[2] = { CMD_FRAME_BEGIN, FastLED.getBrightness() };
     Wire1.beginTransmission(I2C_ADDR_SLAVE);
-    Wire1.write(CMD_FRAME_BEGIN);
+    Wire1.write(beginBuf, sizeof(beginBuf));
     Wire1.endTransmission();
 
     uint8_t row[1 + 1 + PANEL_WIDTH * 3];  // cmd, rowIdx, RGB*8
@@ -337,7 +338,8 @@ static void pushSlaveFrame() {
         row[1] = y;
         for (uint8_t lx = 0; lx < PANEL_WIDTH; lx++) {
             const uint8_t gx = lx + PANEL_WIDTH;        // 8..15 in logical frame
-            const CRGB&   c  = g_frame[static_cast<uint16_t>(y) * MATRIX_COLS + gx];
+            const CRGB    c  = g_frame[static_cast<uint16_t>(y) * MATRIX_COLS + gx];
+            // Send unscaled pixels so the slave preserves full precision for temporal dithering
             row[2 + lx * 3 + 0] = c.r;
             row[2 + lx * 3 + 1] = c.g;
             row[2 + lx * 3 + 2] = c.b;
@@ -398,9 +400,99 @@ void loop() {
 
     const uint32_t now = millis();
     if (g_helloMode) {
-        // Marquee "HELLO" across the full 16x8 frame at full brightness.
-        FastLED.setBrightness(255);
-        renderHelloMarquee(g_frame, MATRIX_COLS, MATRIX_ROWS, now);
+        FastLED.setBrightness(32);
+        // Cycle animations every 5 seconds (5000 ms)
+        const uint32_t cyclePhase = (now / 5000) % 5;
+        if (cyclePhase == 0) {
+            // 1. Marquee "HELLO"
+            renderHelloMarquee(g_frame, MATRIX_COLS, MATRIX_ROWS, now);
+        } else if (cyclePhase == 1) {
+            // 2. Pulse animation using the dynamic hello hue
+            const uint8_t b = sin8(now / 4);
+            CRGB          c = helloColor(now);
+            c.nscale8_video(b);
+            for (uint16_t i = 0; i < FRAME_LEDS; i++) g_frame[i] = c;
+        } else if (cyclePhase == 2) {
+            // 3. Sweeping Progress bar filling from left to right
+            memset(g_frame, 0, sizeof(g_frame));
+            const uint8_t filled = ((now % 5000) * MATRIX_COLS) / 5000;
+            const bool    flash  = (now / 125) & 1;
+            CRGB          col    = helloColor(now);
+            for (uint8_t x = 0; x < filled; x++) {
+                if ((x == filled - 1) && !flash) continue;
+                for (uint8_t y = 0; y < MATRIX_ROWS; y++) {
+                    setFramePixel(x, y, col);
+                }
+            }
+        } else if (cyclePhase == 3) {
+            // 4. Heating Up animation (Thermometer with rising mercury + radiating heat waves)
+            memset(g_frame, 0, sizeof(g_frame));
+            CRGB col = helloColor(now);
+            // Glass outline
+            for (uint8_t y = 1; y <= 4; y++) { setFramePixel(2, y, col); setFramePixel(4, y, col); }
+            setFramePixel(2, 0, col); setFramePixel(3, 0, col); setFramePixel(4, 0, col);
+            setFramePixel(1, 5, col); setFramePixel(2, 5, col); setFramePixel(4, 5, col); setFramePixel(5, 5, col);
+            setFramePixel(1, 6, col); setFramePixel(5, 6, col);
+            for (uint8_t x = 1; x <= 5; x++) setFramePixel(x, 7, col);
+            
+            // Mercury bulb base fill
+            setFramePixel(2, 6, col); setFramePixel(3, 6, col); setFramePixel(4, 6, col);
+            // Stem fill based on sine wave
+            const float tSec = now / 1000.0f;
+            const float fillLevel = sin(tSec / 0.8f) * 0.5f + 0.5f;
+            const uint8_t fillRows = static_cast<uint8_t>(round(fillLevel * 5.0f));
+            for (uint8_t i = 0; i < fillRows; i++) {
+                setFramePixel(3, 5 - i, col);
+            }
+            // Radiating heat waves
+            const float tt = tSec * 5.0f;
+            for (uint8_t w = 0; w < 3; w++) {
+                const int base_y = 1 + w * 2;
+                for (uint8_t x = 8; x < MATRIX_COLS; x++) {
+                    const float phase = (x - 8) * 0.9f + tt + w * 1.2f;
+                    const int y = base_y + static_cast<int>(round(sin(phase)));
+                    if (y >= 0 && y < MATRIX_ROWS) {
+                        setFramePixel(x, static_cast<uint8_t>(y), col);
+                    }
+                }
+            }
+        } else {
+            // 5. Leveling animation (Print bed reference line + sliding probe head with drift/wobble)
+            memset(g_frame, 0, sizeof(g_frame));
+            CRGB col = helloColor(now);
+            CRGB colDim = col; colDim.nscale8_video(102); // ~0.4 brightness
+            CRGB colMid = col; colMid.nscale8_video(178); // ~0.7 brightness
+            
+            // Print bed reference line
+            for (uint8_t x = 0; x < MATRIX_COLS; x++) {
+                setFramePixel(x, 3, colDim);
+                setFramePixel(x, 4, colDim);
+            }
+            setFramePixel(0, 2, col); setFramePixel(0, 5, col);
+            setFramePixel(MATRIX_COLS - 1, 2, col); setFramePixel(MATRIX_COLS - 1, 5, col);
+            
+            const uint8_t cx = MATRIX_COLS / 2; // 8
+            setFramePixel(cx - 1, 1, colMid); setFramePixel(cx, 1, colMid);
+            setFramePixel(cx - 1, 6, colMid); setFramePixel(cx, 6, colMid);
+            
+            // Sliding probe head
+            const float tSec = now / 1000.0f;
+            const float drift = sin(tSec / 0.9f) * 5.0f;
+            const float wobble = sin(tSec / 0.13f) * 0.4f;
+            const int bx = static_cast<int>(round((cx - 1) + drift + wobble));
+            
+            CRGB colProbeTop = col; colProbeTop.nscale8_video(204); // ~0.8 brightness
+            if (bx >= 0 && bx < MATRIX_COLS) {
+                setFramePixel(static_cast<uint8_t>(bx), 3, col);
+                setFramePixel(static_cast<uint8_t>(bx), 4, col);
+                setFramePixel(static_cast<uint8_t>(bx), 2, colProbeTop);
+            }
+            if (bx + 1 >= 0 && bx + 1 < MATRIX_COLS) {
+                setFramePixel(static_cast<uint8_t>(bx + 1), 3, col);
+                setFramePixel(static_cast<uint8_t>(bx + 1), 4, col);
+                setFramePixel(static_cast<uint8_t>(bx + 1), 2, colProbeTop);
+            }
+        }
     } else {
         FastLED.setBrightness(g_state.brightness);
         render(now);
@@ -427,12 +519,17 @@ static volatile bool g_frameReady = false;
 // True until the first complete frame arrives from the master.
 static volatile bool g_helloMode = true;
 
+// Target brightness received from master via CMD_FRAME_BEGIN to keep temporal dithering perfectly symmetric.
+static volatile uint8_t g_slaveBrightness = 32;
+
 static void onSlaveReceive(int numBytes) {
     if (numBytes <= 0) return;
     const uint8_t cmd = Wire.read();
     switch (cmd) {
         case CMD_FRAME_BEGIN:
-            // Nothing to reset; we accept any row index.
+            if (numBytes >= 2) {
+                g_slaveBrightness = Wire.read();
+            }
             while (Wire.available()) Wire.read();
             break;
 
@@ -476,7 +573,7 @@ void setup() {
     Serial.println(F("lumehead SLAVE booting..."));
 
     FastLED.addLeds<WS2812B, LED_DATA_PIN, GRB>(g_panel, PANEL_LEDS);
-    FastLED.setBrightness(255);    // master already scales colors
+    FastLED.setBrightness(32);     // start dim for boot preview; synced to master via CMD_FRAME_BEGIN
     FastLED.clear(true);
 
     Wire.setBufferSize(64);        // > 1 + 1 + 8*3 = 26
@@ -491,8 +588,10 @@ void loop() {
     if (g_frameReady) {
         noInterrupts();
         memcpy(g_panel, const_cast<const CRGB*>(g_back), sizeof(g_panel));
+        const uint8_t targetBrightness = g_slaveBrightness;
         g_frameReady = false;
         interrupts();
+        FastLED.setBrightness(targetBrightness);
         FastLED.show();
     } else if (g_helloMode) {
         fillPanelHello(g_panel, millis());
