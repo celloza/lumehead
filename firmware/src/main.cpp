@@ -402,7 +402,7 @@ void loop() {
     if (g_helloMode) {
         FastLED.setBrightness(32);
         // Cycle animations every 5 seconds (5000 ms)
-        const uint32_t cyclePhase = (now / 5000) % 5;
+        const uint32_t cyclePhase = (now / 5000) % 6;
         if (cyclePhase == 0) {
             // 1. Marquee "HELLO"
             renderHelloMarquee(g_frame, MATRIX_COLS, MATRIX_ROWS, now);
@@ -456,8 +456,52 @@ void loop() {
                     }
                 }
             }
+        } else if (cyclePhase == 4) {
+            // 5. Printing animation (Sweeping print head emitting filament onto a glowing layer and heated bed)
+            memset(g_frame, 0, sizeof(g_frame));
+            CRGB col = helloColor(now);
+            CRGB colBed = col; colBed.nscale8_video(153); // ~0.6 brightness
+            CRGB colStream = col; colStream.nscale8_video(128); // ~0.5 brightness
+            
+            // Heated print bed at bottom row (y = 7)
+            for (uint8_t x = 0; x < MATRIX_COLS; x++) {
+                setFramePixel(x, 7, colBed);
+            }
+            
+            // Calculate sweeping head position
+            const float tSec = now / 1000.0f;
+            const float sweep = sin(tSec / 0.7f) * 0.5f + 0.5f;
+            const int head_x = static_cast<int>(round(sweep * (MATRIX_COLS - 3)));
+            const int nozzle_x = head_x + 1;
+            
+            // Print head body (y = 0, 1) and nozzle tip (y = 2)
+            for (int dx = 0; dx < 3; dx++) {
+                const int px = head_x + dx;
+                if (px >= 0 && px < MATRIX_COLS) {
+                    setFramePixel(static_cast<uint8_t>(px), 0, col);
+                    setFramePixel(static_cast<uint8_t>(px), 1, col);
+                }
+            }
+            if (nozzle_x >= 0 && nozzle_x < MATRIX_COLS) {
+                setFramePixel(static_cast<uint8_t>(nozzle_x), 2, col);
+                // Filament stream (y = 3, 4)
+                setFramePixel(static_cast<uint8_t>(nozzle_x), 3, colStream);
+                setFramePixel(static_cast<uint8_t>(nozzle_x), 4, colStream);
+            }
+            
+            // Deposited glowing layer at y = 5
+            const int layer_y = 5;
+            for (int x = 0; x < MATRIX_COLS; x++) {
+                const int dist = abs(x - nozzle_x);
+                if (dist < 6) {
+                    const float b = max(0.15f, 1.0f - dist * 0.18f);
+                    CRGB colLayer = col;
+                    colLayer.nscale8_video(static_cast<uint8_t>(round(b * 255.0f)));
+                    setFramePixel(static_cast<uint8_t>(x), layer_y, colLayer);
+                }
+            }
         } else {
-            // 5. Leveling animation (Print bed reference line + sliding probe head with drift/wobble)
+            // 6. Leveling animation (Print bed reference line + sliding probe head with drift/wobble)
             memset(g_frame, 0, sizeof(g_frame));
             CRGB col = helloColor(now);
             CRGB colDim = col; colDim.nscale8_video(102); // ~0.4 brightness
