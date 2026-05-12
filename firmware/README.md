@@ -39,8 +39,8 @@ the `firmware/` folder directly in VS Code.
 
 ```
                           +------------------+
-  Klipper / Pi  ---SDA--->|  MASTER  GPIO 8 |   host I2C @ 0x42
-                ---SCL--->|          GPIO 9 |
+  Klipper / Pi  ---SDA--->|  MASTER  GPIO 6 |   host I2C @ 0x42
+                ---SCL--->|          GPIO 7 |
                           |                  |
                           |  Wire1 GPIO 4 ------SDA----+
                           |  Wire1 GPIO 5 ------SCL----+   inter-board I2C
